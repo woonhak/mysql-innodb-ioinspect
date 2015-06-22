@@ -105,6 +105,7 @@ typedef uint8_t byte;
 	in i_s_page_type[] array */
 #define I_S_PAGE_TYPE_INDEX   1
 
+#if 0
 /** Name string for File Page Types */
 static buf_page_desc_t  i_s_page_type[] = {
 	{"ALLOCATED", FIL_PAGE_TYPE_ALLOCATED},
@@ -123,6 +124,7 @@ static buf_page_desc_t  i_s_page_type[] = {
 	{"IBUF_INDEX", I_S_PAGE_TYPE_IBUF},
 	{"UNKNOWN", I_S_PAGE_TYPE_UNKNOWN}
 };                                                                 
+#endif
 
 /*enumerator for fil page type*/
 enum fil_page_types
