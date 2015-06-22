@@ -98,7 +98,11 @@ typedef uint8_t byte;
 /* The ibuf table and indexes's ID are assigned as the number
 	 DICT_IBUF_ID_MIN plus the space id */
 #define DICT_IBUF_ID_MIN  0xFFFFFFFF00000000ULL  
-
+/******************************************
+	from ibuf0ibuf.h
+ ******************************************/
+/* The insert buffer tree itself is always located in space 0. */
+#define IBUF_SPACE_ID   0
 
 /******************************************
 	from fsp0types.h
@@ -209,7 +213,7 @@ Gets the index id field of a page.
 @return index id */
 UNIV_INLINE
 uint64_t
-btr_page_get_index_id(                                              
+buf_get_index_id(
 		/*==================*/
 		const byte* page) /*!< in: index page */
 {    
