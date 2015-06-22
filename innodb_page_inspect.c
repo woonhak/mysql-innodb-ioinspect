@@ -24,7 +24,7 @@
 #include"innodb_page_inspect.h"		/*file page header data from innodb*/
 
 
-#define BLCKSZ 			8192L			//block size 8KB
+#define BLCKSZ 		16384L			//block size 8KB
 #define SECTOR_SIZE	512
 #define SECTORS_PER_BLOCK	(BLCKSZ/SECTOR_SIZE)
 #define BUFFER_SIZE (BLCKSZ) 
@@ -42,7 +42,7 @@
 			__LINE__, __func__, ##__VA_ARGS__); } while (0);
 
 #define log_info(fmt, ...) \
-	do { fprintf(stderr, "INFO : %s:%d:%s(): " fmt, __FILE__, \
+	do { fprintf(stdout, "INFO : %s:%d:%s(): " fmt, __FILE__, \
 			__LINE__, __func__, ##__VA_ARGS__); } while (0);
 
 /*********************************
@@ -102,10 +102,12 @@ void check_blocks(
 #endif	
 		{
 
+#if 1
 			/*if current size is not the same as block size,
 				then skip it*/
 			if(size != (BLCKSZ/SECTOR_SIZE))
 				continue;
+#endif
 
 			off64_t offset = (off64_t)sect_num*SECTOR_SIZE;
 			/*read a sector data info buffer and check it's header*/
@@ -183,9 +185,14 @@ void check_blocks(
 					log_debug( "PAGE INFO : FIL_PAGE_ZBLOB2\n");
 				break;
 
+				case I_S_PAGE_TYPE_IBUF  :  /*!< ibuf page type */
+					fil_type_count[IBUF_INDEX]++;
+					log_debug( "PAGE INFO : FIL_PAGE_IBUF_INDEX\n");
+				break;
+
 				default :
 					fil_type_count[FIL_TYPE_END]++;
-					log_info("PAGE_INFO : OTHER\n");
+					log_info("PAGE_INFO : OTHER, cur page type : %u\n", fil_page_type);
 			}
 //			log_debug("read done\n");
 		}
