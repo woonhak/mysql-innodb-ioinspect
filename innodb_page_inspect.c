@@ -121,8 +121,17 @@ void check_blocks(
 			switch(fil_page_type)
 			{
 				case FIL_PAGE_INDEX:
-					fil_type_count[INDEX]++;
-					log_debug("PAGE INFO : FIL_PAGE_INDEX\n");
+
+					if( (uint64_t) buf_get_index_id(buf) == DICT_IBUF_ID_MIN)
+					{
+						fil_type_count[IBUF_INDEX]++;
+						log_debug( "PAGE INFO : FIL_PAGE_IBUF_INDEX\n");
+					}
+					else
+					{
+						fil_type_count[INDEX]++;
+						log_debug("PAGE INFO : FIL_PAGE_INDEX\n");
+					}
 				break;
 				
 				case FIL_PAGE_INODE:
