@@ -94,37 +94,26 @@ typedef uint8_t byte;
 					/*!< Last page type */
 /* @} */
 
-/** Change buffer B-tree page */
-#define I_S_PAGE_TYPE_IBUF    (FIL_PAGE_TYPE_LAST + 1)
+/*Add following values to decode ibuf */
+/* The ibuf table and indexes's ID are assigned as the number
+	 DICT_IBUF_ID_MIN plus the space id */
+#define DICT_IBUF_ID_MIN  0xFFFFFFFF00000000ULL  
 
-/** Any states greater than I_S_PAGE_TYPE_IBUF would be treated as
-	unknown. */
-#define I_S_PAGE_TYPE_UNKNOWN   (I_S_PAGE_TYPE_IBUF + 1)
 
-/** We also define I_S_PAGE_TYPE_INDEX as the Index Page's position
-	in i_s_page_type[] array */
-#define I_S_PAGE_TYPE_INDEX   1
+/******************************************
+	from fsp0types.h
+ ******************************************/
+/** On a page of any file segment, data may be put starting from this
+	offset */
+#define FSEG_PAGE_DATA    FIL_PAGE_DATA                              
 
-#if 0
-/** Name string for File Page Types */
-static buf_page_desc_t  i_s_page_type[] = {
-	{"ALLOCATED", FIL_PAGE_TYPE_ALLOCATED},
-	{"INDEX", FIL_PAGE_INDEX},
-	{"UNDO_LOG", FIL_PAGE_UNDO_LOG},
-	{"INODE", FIL_PAGE_INODE},
-	{"IBUF_FREE_LIST", FIL_PAGE_IBUF_FREE_LIST},
-	{"IBUF_BITMAP", FIL_PAGE_IBUF_BITMAP},
-	{"SYSTEM", FIL_PAGE_TYPE_SYS},
-	{"TRX_SYSTEM", FIL_PAGE_TYPE_TRX_SYS},
-	{"FILE_SPACE_HEADER", FIL_PAGE_TYPE_FSP_HDR},
-	{"EXTENT_DESCRIPTOR", FIL_PAGE_TYPE_XDES},
-	{"BLOB", FIL_PAGE_TYPE_BLOB},
-	{"COMPRESSED_BLOB", FIL_PAGE_TYPE_ZBLOB},
-	{"COMPRESSED_BLOB2", FIL_PAGE_TYPE_ZBLOB2},
-	{"IBUF_INDEX", I_S_PAGE_TYPE_IBUF},
-	{"UNKNOWN", I_S_PAGE_TYPE_UNKNOWN}
-};                                                                 
-#endif
+/******************************************
+	from page0page.h
+ ******************************************/
+#define PAGE_HEADER FSEG_PAGE_DATA  /* index page header starts at this offset*/
+#define PAGE_INDEX_ID  28 /* index id where the page belongs.
+														 This field should not be written to after
+														 page creation. */
 
 /*enumerator for fil page type*/
 enum fil_page_types
@@ -179,5 +168,52 @@ mach_read_from_2(
 	  return(((ulint)(b[0]) << 8) | (ulint)(b[1]));
 }
 
+/********************************************************//**
+The following function is used to fetch data from 4 consecutive
+bytes. The most significant byte is at the lowest address.
+@return ulint integer */
+UNIV_INLINE
+ulint
+mach_read_from_4(
+		/*=============*/
+		const byte* b)  /*!< in: pointer to four bytes */
+{
+	return( ((ulint)(b[0]) << 24)
+			| ((ulint)(b[1]) << 16)
+			| ((ulint)(b[2]) << 8)
+			| (ulint)(b[3])
+			);
+}
+
+
+/********************************************************//**
+The following function is used to fetch data from 8 consecutive
+bytes. The most significant byte is at the lowest address.
+@return 64-bit integer */
+UNIV_INLINE
+uint64_t
+mach_read_from_8(                                              
+		/*=============*/
+		const byte* b)  /*!< in: pointer to 8 bytes */
+{
+	uint64_t ull;
+
+	ull = ((uint64_t) mach_read_from_4(b)) << 32;
+	ull |= (uint64_t) mach_read_from_4(b + 4);
+
+	return(ull);
+}
+
+/**************************************************************//**
+Gets the index id field of a page.
+@return index id */
+UNIV_INLINE
+uint64_t
+btr_page_get_index_id(                                              
+		/*==================*/
+		const byte* page) /*!< in: index page */
+{    
+	return(mach_read_from_8(page + PAGE_HEADER + PAGE_INDEX_ID));
+}    
 
 #endif

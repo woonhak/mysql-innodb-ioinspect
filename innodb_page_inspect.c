@@ -185,10 +185,12 @@ void check_blocks(
 					log_debug( "PAGE INFO : FIL_PAGE_ZBLOB2\n");
 				break;
 
+#if 0
 				case I_S_PAGE_TYPE_IBUF  :  /*!< ibuf page type */
 					fil_type_count[IBUF_INDEX]++;
 					log_debug( "PAGE INFO : FIL_PAGE_IBUF_INDEX\n");
 				break;
+#endif
 
 				default :
 					fil_type_count[FIL_TYPE_END]++;
