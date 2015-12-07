@@ -20,11 +20,10 @@
 #include<sys/time.h>
 #include<assert.h>
 
-/*Uniform random generator*/
 #include"innodb_page_inspect.h"		/*file page header data from innodb*/
+#include "red_black_tree.h"
 
-
-#define BLCKSZ 		16384L			//block size 8KB
+#define BLCKSZ 		4096L			//block size 8KB
 #define SECTOR_SIZE	512
 #define SECTORS_PER_BLOCK	(BLCKSZ/SECTOR_SIZE)
 #define BUFFER_SIZE (BLCKSZ) 
@@ -37,9 +36,12 @@
 #define DEBUG 1
 
 #define log_debug(fmt, ...) \
-	do { if(DEBUG) \
+	do { if(DEBUG) {\
 		fprintf(stdout, "DEBUG : %s:%d:%s(): " fmt, __FILE__, \
-			__LINE__, __func__, ##__VA_ARGS__); } while (0);
+				__LINE__, __func__, ##__VA_ARGS__); }\
+			else {\
+				;} \
+			} while (0);
 
 #define log_info(fmt, ...) \
 	do { fprintf(stdout, "INFO : %s:%d:%s(): " fmt, __FILE__, \
@@ -54,6 +56,61 @@ char device_path[256];
 char log_path[256];
 
 unsigned fil_type_count[FIL_TYPE_END+1];
+unsigned long nLines;
+
+/*********************************************************************
+ *RED Black Tree
+ **********************************************************************/
+/*add this for search fast */
+typedef struct info
+{
+	unsigned fil_page_type;
+} Info;
+
+/*Root of the rbtree*/
+rb_red_blk_tree *pRBtree;
+
+void IntDest(void* a) {
+	free((int*)a);                        
+}
+
+int IntComp(const void* a, const void* b) {
+	if( *(int*)a > *(int*)b) return(1);
+	if( *(int*)a < *(int*)b) return(-1);
+	return(0);
+}
+
+void IntPrint(const void* a) {
+	printf("%i",*(int*)a);
+}
+
+void InfoPrint(void* a) {
+	;
+}
+
+void InfoDest(void *a){
+	;
+}
+
+ /*Root of the rbtree*/   
+rb_red_blk_tree *pRBtree;
+
+/*********************************************************************
+ * Util
+ **********************************************************************/
+/*This function calulates time different in microsecond*/
+double time_diff(struct timeval x , struct timeval y)    
+{
+	double x_ms , y_ms , diff;
+
+	x_ms = (double)x.tv_sec*1000000 + (double)x.tv_usec;
+	y_ms = (double)y.tv_sec*1000000 + (double)y.tv_usec;
+
+	diff = (double)y_ms - (double)x_ms;
+
+	return diff;
+}
+
 
 /*********************************//*
 print_fil_type_count:	 
@@ -67,6 +124,116 @@ void print_fil_type_count(void)
 		fprintf(stdout, "%s:%u\n",fil_type_names[i],fil_type_count[i]);
 }
 
+void add_node(int sect_num, unsigned fil_page_type)
+{
+	/*add current page info to rb tree*/
+	rb_red_blk_node  *pNewNode;
+	int*  pNewInt;
+	Info* pNewInfo;
+
+	pNewInt = (int *) malloc(sizeof(int));
+	memset(pNewInt, 0, sizeof(int));
+	*pNewInt = sect_num;
+
+	pNewInfo = (Info *) malloc(sizeof(Info));
+	memset(pNewInfo, 0, sizeof(Info));
+	pNewInfo->fil_page_type = fil_page_type;
+
+	pNewNode = RBTreeInsert(pRBtree, pNewInt, pNewInfo);
+	assert(pNewNode);
+}
+
+void decode_page(char * buf, unsigned fil_page_type){
+	switch(fil_page_type)
+	{
+		case FIL_PAGE_INDEX:
+			if (buf) {
+				if( (uint64_t) buf_get_index_id(buf) == DICT_IBUF_ID_MIN)
+				{
+					fil_type_count[IBUF_INDEX]++;
+					//log_debug( "PAGE INFO : FIL_PAGE_IBUF_INDEX\n");
+				}
+				else
+				{
+					fil_type_count[INDEX]++;
+					//log_debug("PAGE INFO : FIL_PAGE_INDEX\n");
+				}
+			}
+
+			fil_type_count[INDEX]++;
+			break;
+
+		case FIL_PAGE_INODE:
+			fil_type_count[INODE]++;
+			//log_debug("PAGE INFO : INODE\n");
+			break;
+
+		case FIL_PAGE_UNDO_LOG:
+			fil_type_count[UNDO_LOG]++;
+			//log_debug("PAGE INFO : UNDO_LOG\n");
+			break;
+
+		case FIL_PAGE_IBUF_FREE_LIST : /*!< Insert buffer free list */
+			fil_type_count[IBUF_FREE_LIST]++;
+			//log_debug( "PAGE INFO : FIL_PAGE_IBUF_FREE_LIST\n");
+			break;
+
+		case FIL_PAGE_TYPE_ALLOCATED : /*!< Freshly allocated page */
+			fil_type_count[ALLOCATED]++;
+			//log_debug( "PAGE INFO : FIL_PAGE_IBUF_FREE_LIST\n");
+			break;
+
+		case FIL_PAGE_IBUF_BITMAP  : /*!< Insert buffer bitmap */
+			fil_type_count[BITMAP]++;
+			//log_debug( "PAGE INFO : FIL_PAGE_IBUF_BITMAP\n");
+			break;
+
+		case FIL_PAGE_TYPE_SYS : /*!< System page */
+			fil_type_count[SYS]++;
+			//log_debug( "PAGE INFO : FIL_PAGE_SYSTEM\n");
+			break;
+
+		case FIL_PAGE_TYPE_TRX_SYS : /*!< Transaction system data */
+			fil_type_count[TRX_SYS]++;
+			//log_debug( "PAGE INFO : FIL_PAGE_TRX_SYS\n");
+			break;
+
+		case FIL_PAGE_TYPE_FSP_HDR : /*!< File space header */
+			fil_type_count[FSP_HDR]++;
+			//log_debug( "PAGE INFO : FIL_PAGE_FSP_HDR\n");
+			break;
+
+		case FIL_PAGE_TYPE_XDES  : /*!< Extent descriptor page */
+			fil_type_count[XDES]++;
+			//log_debug( "PAGE INFO : FIL_PAGE_XDES\n");
+			break;
+
+		case FIL_PAGE_TYPE_BLOB  :  /*!< Uncompressed BLOB page */
+			fil_type_count[BLOB]++;
+			//log_debug( "PAGE INFO : FIL_PAGE_BLOB\n");
+			break;
+
+		case FIL_PAGE_TYPE_ZBLOB :  /*!< First compressed BLOB page */
+			fil_type_count[ZBLOB]++;
+			//log_debug( "PAGE INFO : FIL_PAGE_ZBLOB\n");
+			break;
+
+		case FIL_PAGE_TYPE_ZBLOB2  :  /*!< Subsequent compressed BLOB page */
+			fil_type_count[ZBLOB2]++;
+			//log_debug( "PAGE INFO : FIL_PAGE_ZBLOB2\n");
+			break;
+#if 0
+		case I_S_PAGE_TYPE_IBUF  :  /*!< ibuf page type */
+			fil_type_count[IBUF_INDEX]++;
+			log_debug( "PAGE INFO : FIL_PAGE_IBUF_INDEX\n");
+			break;
+#endif
+		default :
+			fil_type_count[FIL_TYPE_END]++;
+			log_info("PAGE_INFO : OTHER, cur page type : %u\n", fil_page_type);
+	}
+}
+
 /*********************************//*
 check_blocks:	 read start sector number and size and
 read that block from the target device and decode file page type*/
@@ -75,24 +242,38 @@ void check_blocks(
 		FILE *infile) /*<-: sector,size list file */
 {
 	int i=0;
+	char cCommand;
 	char *buf;                // aligned buffer
-	int sect_num=0, size=0;
+	int sect_num=0, size=8;
+	float time;
+
+	struct timeval  oldTime, curTime;
+	unsigned long oldLines=0;
+	unsigned long nLineCount=0;
+
+	/*rbt search*/
+	rb_red_blk_node *pFindNode;
+	Info *pFindInfo;
 
 	log_debug("enter\n");
+
+	pRBtree = RBTreeCreate(IntComp,IntDest,InfoDest,IntPrint,InfoPrint); 
 
 	/*init fil_type_count */
 	for(i=0;i<FIL_TYPE_END+1;i++)
 		fil_type_count[i]=0;
 
+	/*init file and time*/
+	fseek(infile, SEEK_SET, 0);
+	gettimeofday(&oldTime, NULL);
+
 	/*FIXME:in Linux, minimum aligned size is sector, 
 		If you want to use another align size, then change alignment size*/
 	assert(!posix_memalign((void**) &buf, SECTOR_ALIGN, BUFFER_SIZE));
 
-	fseek(infile, SEEK_SET, 0);
-
-	while(fscanf(infile, "%d,%d\n", &sect_num, &size) != EOF){
+	while(fscanf(infile, "%c %d %f\n", &cCommand,  &sect_num, &time) != EOF)
+	{
 		//fprintf(stdout, "%d line - sect_num:%d, size:%d\n",i++, sect_num, size);
-
 #if 0
 		/*check alignment, this is not always correct*/
 		if(sect_num %(BLCKSZ/SECTOR_SIZE) != 0){
@@ -101,13 +282,39 @@ void check_blocks(
 		else
 #endif	
 		{
+			nLineCount++;
 
-#if 1
 			/*if current size is not the same as block size,
 				then skip it*/
 			if(size != (BLCKSZ/SECTOR_SIZE))
 				continue;
-#endif
+
+			if(cCommand != 'W')
+				continue;
+
+			/********************************************************
+			 *  *                      SEARCH PAGE 
+			 *********************************************************/
+			if((pFindNode = RBExactQuery(pRBtree, &sect_num))){
+				/*It is already exist page*/
+				pFindInfo = pFindNode->info;
+
+				/*decode page */
+				decode_page(NULL, pFindInfo->fil_page_type);
+				continue;
+			}
+
+			/*woonhak, check time tick and progress report*/
+			gettimeofday(&curTime, NULL);
+			if(oldTime.tv_sec != curTime.tv_sec){
+				unsigned long lineDiff=nLineCount-oldLines;
+				fprintf(stderr, "\rProgress Report : TPS[%.2f], %.2f%%(%ld/%ld)", 
+						(double)lineDiff/time_diff(oldTime, curTime)*1000000, (double)nLineCount*100/nLines, nLineCount, nLines);
+
+				/*Update old values*/
+				oldLines=nLineCount;
+				memcpy(&oldTime, &curTime, sizeof(struct timeval));
+			}
 
 			off64_t offset = (off64_t)sect_num*SECTOR_SIZE;
 			/*read a sector data info buffer and check it's header*/
@@ -115,98 +322,16 @@ void check_blocks(
 
 			if(ret != BLCKSZ)
 				log_debug("block read error offset : %lu\n", offset);
-			
+
 			ulint fil_page_type = mach_read_from_2( (byte *)buf+FIL_PAGE_TYPE) ;
 
-			switch(fil_page_type)
-			{
-				case FIL_PAGE_INDEX:
+			decode_page(buf, fil_page_type);
 
-					if( (uint64_t) buf_get_index_id(buf) == DICT_IBUF_ID_MIN)
-					{
-						fil_type_count[IBUF_INDEX]++;
-						log_debug( "PAGE INFO : FIL_PAGE_IBUF_INDEX\n");
-					}
-					else
-					{
-						fil_type_count[INDEX]++;
-						log_debug("PAGE INFO : FIL_PAGE_INDEX\n");
-					}
-				break;
-				
-				case FIL_PAGE_INODE:
-					fil_type_count[INODE]++;
-					log_debug("PAGE INFO : INODE\n");
-				break;
-				
-				case FIL_PAGE_UNDO_LOG:
-					fil_type_count[UNDO_LOG]++;
-					log_debug("PAGE INFO : UNDO_LOG\n");
-				break;
-
-				case FIL_PAGE_IBUF_FREE_LIST : /*!< Insert buffer free list */
-					fil_type_count[IBUF_FREE_LIST]++;
-					log_debug( "PAGE INFO : FIL_PAGE_IBUF_FREE_LIST\n");
-				break;
-			
-				case FIL_PAGE_TYPE_ALLOCATED : /*!< Freshly allocated page */
-					fil_type_count[ALLOCATED]++;
-					log_debug( "PAGE INFO : FIL_PAGE_IBUF_FREE_LIST\n");
-				break;
-
-				case FIL_PAGE_IBUF_BITMAP  : /*!< Insert buffer bitmap */
-					fil_type_count[BITMAP]++;
-					log_debug( "PAGE INFO : FIL_PAGE_IBUF_BITMAP\n");
-				break;
-
-				case FIL_PAGE_TYPE_SYS : /*!< System page */
-					fil_type_count[SYS]++;
-					log_debug( "PAGE INFO : FIL_PAGE_SYSTEM\n");
-				break;
-
-				case FIL_PAGE_TYPE_TRX_SYS : /*!< Transaction system data */
-					fil_type_count[TRX_SYS]++;
-					log_debug( "PAGE INFO : FIL_PAGE_TRX_SYS\n");
-				break;
-
-				case FIL_PAGE_TYPE_FSP_HDR : /*!< File space header */
-					fil_type_count[FSP_HDR]++;
-					log_debug( "PAGE INFO : FIL_PAGE_FSP_HDR\n");
-				break;
-
-				case FIL_PAGE_TYPE_XDES  : /*!< Extent descriptor page */
-					fil_type_count[XDES]++;
-					log_debug( "PAGE INFO : FIL_PAGE_XDES\n");
-				break;
-
-				case FIL_PAGE_TYPE_BLOB  :  /*!< Uncompressed BLOB page */
-					fil_type_count[BLOB]++;
-					log_debug( "PAGE INFO : FIL_PAGE_BLOB\n");
-				break;
-
-				case FIL_PAGE_TYPE_ZBLOB :  /*!< First compressed BLOB page */
-					fil_type_count[ZBLOB]++;
-					log_debug( "PAGE INFO : FIL_PAGE_ZBLOB\n");
-				break;
-
-				case FIL_PAGE_TYPE_ZBLOB2  :  /*!< Subsequent compressed BLOB page */
-					fil_type_count[ZBLOB2]++;
-					log_debug( "PAGE INFO : FIL_PAGE_ZBLOB2\n");
-				break;
-
-#if 0
-				case I_S_PAGE_TYPE_IBUF  :  /*!< ibuf page type */
-					fil_type_count[IBUF_INDEX]++;
-					log_debug( "PAGE INFO : FIL_PAGE_IBUF_INDEX\n");
-				break;
-#endif
-
-				default :
-					fil_type_count[FIL_TYPE_END]++;
-					log_info("PAGE_INFO : OTHER, cur page type : %u\n", fil_page_type);
-			}
-//			log_debug("read done\n");
+			/*Memoization - add current this to rbt*/
+			add_node(sect_num, fil_page_type);
 		}
+
+		//			log_debug("read done\n");
 	}
 
 	free(buf);
@@ -218,9 +343,9 @@ int main(int argc, char *argv[])
 	FILE *logfile;
 
 	/*add test program input arguments */
-	if(argc != 3){ 
-		fprintf(stderr, "io_test : This program requires device path\n"
-		 	              "program : for ex) ./io_test /dev/sdb input_filename\n\n");
+	if(argc < 4){ 
+		fprintf(stderr, "Innodb Page Inspect  : This program requires device path and write ops file\n"
+		 	              "program : for ex) ./innodb_page_inspect /dev/sdb input_filename\n\n");
 		return -1; 
 	}
 
@@ -279,6 +404,9 @@ int main(int argc, char *argv[])
 		log_debug("File Not exists error\n");
 		exit(-1);
 	}
+
+	/*set total input line size*/
+	nLines = atol(argv[3]);
 
 	check_blocks(fd, logfile);
 
